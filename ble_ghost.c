@@ -28,14 +28,14 @@ typedef struct {
     Submenu* submenu;
     Widget* widget;
     NotificationApp* notifications;
-    bool is_broadcasting;
+    volatile bool is_broadcasting;
     uint32_t packet_count;
     uint8_t selected_mode;
     uint8_t speed_profile;
     FuriThread* worker_thread;
-    FuriTimer* timer;
 } BleGhostApp;
 
+// Custom connection alias pool
 static const char* RANDOM_NAMES[] = {
     "diddy's Vibrator",
     "Epsteins s35 galaxy",
@@ -60,56 +60,58 @@ static const char* RANDOM_NAMES[] = {
     "Broken Microwave ODU"
 };
 
-// Forward declarations
-static void ble_ghost_update_widget(BleGhostApp* app);
+#define RANDOM_NAMES_COUNT (sizeof(RANDOM_NAMES) / sizeof(RANDOM_NAMES[0]))
 
-static void ble_ghost_ui_timer_callback(void* context) {
-    BleGhostApp* app = context;
-    if(app->is_broadcasting) {
-        ble_ghost_update_widget(app);
-    }
-}
+// Forward declaration
+static void ble_ghost_update_widget(BleGhostApp* app);
 
 static int32_t ble_ghost_worker(void* context) {
     BleGhostApp* app = context;
     
-    furi_delay_ms(200);
-
-    if(furi_hal_bt_is_active()) {
-        furi_hal_bt_extra_beacon_start();
-    }
+    // Allow radio stack to stabilize on thread entry
+    furi_delay_ms(500);
 
     while(app->is_broadcasting) {
+        // Guard against global Bluetooth state changes
+        if(!furi_hal_bt_is_active()) {
+            furi_delay_ms(200);
+            continue;
+        }
+
         const BleMode* mode = &BLE_MODES[app->selected_mode];
         size_t random_index = furi_hal_random_get() % mode->count;
         const BlePayload* payload = &mode->payloads[random_index];
 
-        if(furi_hal_bt_is_active()) {
-            if(payload && payload->data && payload->size > 0) {
-                // Update beacon data safely without restarting radio on every tick
-                if(furi_hal_bt_extra_beacon_set_data(payload->data, payload->size)) {
-                    app->packet_count++;
-                }
+        // Safely cycle extra beacon packets without triggering radio assertion reboots
+        furi_hal_bt_extra_beacon_stop();
+        
+        if(payload && payload->data && payload->size > 0) {
+            if(furi_hal_bt_extra_beacon_set_data(payload->data, payload->size)) {
+                furi_hal_bt_extra_beacon_start();
+                app->packet_count++;
             }
         }
         
+        // Balanced delay profile to prevent CPU starvation and radio lockups
         if(app->speed_profile == 1) {
-            furi_delay_ms(50 + (furi_hal_random_get() % 30));
+            furi_delay_ms(70 + (furi_hal_random_get() % 30)); // Safe hyper mode
         } else {
-            furi_delay_ms(100 + (furi_hal_random_get() % 50));
+            furi_delay_ms(150 + (furi_hal_random_get() % 50)); // Normal mode
         }
     }
 
+    // Ensure beacon is explicitly killed on exit
     if(furi_hal_bt_is_active()) {
         furi_hal_bt_extra_beacon_stop();
     }
+    
     return 0;
 }
 
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
-    const char* random_alias = RANDOM_NAMES[furi_hal_random_get() % 21];
+    const char* random_alias = RANDOM_NAMES[furi_hal_random_get() % RANDOM_NAMES_COUNT];
 
     char buffer[128];
     snprintf(buffer, sizeof(buffer), "\e#BLE Ghost: %s\n", BLE_MODES[app->selected_mode].category_name);
@@ -121,7 +123,7 @@ static void ble_ghost_update_widget(BleGhostApp* app) {
     snprintf(buffer, sizeof(buffer), "Packets Spammed: %lu", app->packet_count);
     widget_add_string_element(app->widget, 0, 32, AlignLeft, AlignTop, FontSecondary, buffer);
 
-    snprintf(buffer, sizeof(buffer), "Speed: %s", app->speed_profile == 1 ? "Hyper Storm" : "Normal");
+    snprintf(buffer, sizeof(buffer), "Speed: %s", app->speed_profile == 1 ? "Optimized Fast" : "Normal");
     widget_add_string_element(app->widget, 0, 48, AlignLeft, AlignTop, FontSecondary, buffer);
 }
 
@@ -131,10 +133,10 @@ static void submenu_callback(void* context, uint32_t index) {
     app->packet_count = 0;
     app->is_broadcasting = true;
     
+    // Allocate and start worker thread cleanly
     app->worker_thread = furi_thread_alloc_ex("BleGhostWorker", 4096, ble_ghost_worker, app);
     furi_thread_start(app->worker_thread);
 
-    furi_timer_start(app->timer, furi_ms_to_ticks(500));
     ble_ghost_update_widget(app);
     view_dispatcher_switch_to_view(app->view_dispatcher, ViewWidget);
 }
@@ -148,8 +150,6 @@ static uint32_t view_widget_exit(void* context) {
     BleGhostApp* app = context;
     app->is_broadcasting = false;
     
-    furi_timer_stop(app->timer);
-
     if(app->worker_thread) {
         furi_thread_join(app->worker_thread);
         furi_thread_free(app->worker_thread);
@@ -180,8 +180,6 @@ static BleGhostApp* ble_ghost_app_alloc() {
     view_set_previous_callback(widget_get_view(app->widget), view_widget_exit);
     view_dispatcher_add_view(app->view_dispatcher, ViewWidget, widget_get_view(app->widget));
 
-    app->timer = furi_timer_alloc(ble_ghost_ui_timer_callback, FuriTimerTypePeriodic, app);
-
     app->is_broadcasting = false;
     app->packet_count = 0;
     app->selected_mode = 0;
@@ -193,14 +191,12 @@ static BleGhostApp* ble_ghost_app_alloc() {
 
 static void ble_ghost_app_free(BleGhostApp* app) {
     app->is_broadcasting = false;
-    furi_timer_stop(app->timer);
 
     if(app->worker_thread) {
         furi_thread_join(app->worker_thread);
         furi_thread_free(app->worker_thread);
     }
     
-    furi_timer_free(app->timer);
     view_dispatcher_remove_view(app->view_dispatcher, ViewSubmenu);
     view_dispatcher_remove_view(app->view_dispatcher, ViewWidget);
     submenu_free(app->submenu);
