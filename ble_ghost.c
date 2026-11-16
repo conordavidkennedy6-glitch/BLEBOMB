@@ -13,7 +13,7 @@ typedef enum {
     SubmenuIndexApple,
     SubmenuIndexAndroid,
     SubmenuIndexWindows,
-    SubmenuIndexOthers,
+    SubmenuIndexAccessories,
     SubmenuIndexStorm,
 } SubmenuIndex;
 
@@ -34,7 +34,7 @@ typedef struct {
     FuriThread* worker_thread;
 } BleGhostApp;
 
-// Randomized hilarious custom connection names pool
+// Randomized custom connection names pool
 static const char* RANDOM_NAMES[] = {
     "diddy's Vibrator",
     "Epsteins s35 galaxy",
@@ -55,7 +55,7 @@ static int32_t ble_ghost_worker(void* context) {
     while(app->is_broadcasting) {
         const BleMode* mode = &BLE_MODES[app->selected_mode];
         
-        // Pick a completely random payload index from the active mode pool using valid SDK function
+        // Pick a completely random payload index from the active mode pool
         size_t random_index = furi_hal_random_get() % mode->count;
         const BlePayload* payload = &mode->payloads[random_index];
 
@@ -68,7 +68,7 @@ static int32_t ble_ghost_worker(void* context) {
         }
         
         // Randomized timing delay to eliminate observable rhythm patterns
-        furi_delay_ms(60 + (furi_hal_random_get() % 70));
+        furi_delay_ms(50 + (furi_hal_random_get() % 60));
     }
 
     furi_hal_bt_extra_beacon_stop();
@@ -78,7 +78,6 @@ static int32_t ble_ghost_worker(void* context) {
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
-    // Select a random alias name to show on screen
     const char* random_alias = RANDOM_NAMES[furi_hal_random_get() % 11];
 
     char buffer[128];
@@ -130,11 +129,11 @@ static BleGhostApp* ble_ghost_app_alloc() {
     view_dispatcher_attach_to_gui(app->view_dispatcher, app->gui, ViewDispatcherTypeFullscreen);
 
     app->submenu = submenu_alloc();
-    submenu_add_item(app->submenu, "Apple Ecosystem (TV/Audio)", SubmenuIndexApple, submenu_callback, app);
-    submenu_add_item(app->submenu, "Android & Buds", SubmenuIndexAndroid, submenu_callback, app);
+    submenu_add_item(app->submenu, "Apple Ecosystem", SubmenuIndexApple, submenu_callback, app);
+    submenu_add_item(app->submenu, "Android & Audio", SubmenuIndexAndroid, submenu_callback, app);
     submenu_add_item(app->submenu, "Windows Devices", SubmenuIndexWindows, submenu_callback, app);
-    submenu_add_item(app->submenu, "Smart Accessories", SubmenuIndexOthers, submenu_callback, app);
-    submenu_add_item(app->submenu, "Spam All (Chaos Storm)", SubmenuIndexStorm, submenu_callback, app);
+    submenu_add_item(app->submenu, "Trackers & Remotes", SubmenuIndexAccessories, submenu_callback, app);
+    submenu_add_item(app->submenu, "Chaos Storm (All Systems)", SubmenuIndexStorm, submenu_callback, app);
     
     view_set_previous_callback(submenu_get_view(app->submenu), view_submenu_exit);
     view_dispatcher_add_view(app->view_dispatcher, ViewSubmenu, submenu_get_view(app->submenu));
