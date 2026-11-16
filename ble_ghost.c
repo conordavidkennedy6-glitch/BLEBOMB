@@ -13,7 +13,7 @@ typedef enum {
     SubmenuIndexApple,
     SubmenuIndexAndroid,
     SubmenuIndexWindows,
-    SubmenuIndexOthers,
+    SubmenuIndexStorm,
 } SubmenuIndex;
 
 typedef enum {
@@ -33,13 +33,28 @@ typedef struct {
     FuriThread* worker_thread;
 } BleGhostApp;
 
+// Random humorous device names pool for UI / connection menus
+static const char* RANDOM_NAMES[] = {
+    "diddy's Vibrator",
+    "Epsteins s35 galaxy",
+    "Kim jong Un PS5",
+    "FBI Surveillance Van #4",
+    "Free Wi-Fi (Totally Safe)",
+    "JetEngine_Test_Mic",
+    "NSA Wiretap Node 9",
+    "Get Me Out Of Here",
+    "Printer That Hates You"
+};
+
 static int32_t ble_ghost_worker(void* context) {
     BleGhostApp* app = context;
-    size_t payload_index = 0;
     
     while(app->is_broadcasting) {
         const BleMode* mode = &BLE_MODES[app->selected_mode];
-        const BlePayload* payload = &mode->payloads[payload_index % mode->count];
+        
+        // Pick a completely random payload index from the current mode pool
+        size_t random_index = furi_hal_random_ico() % mode->count;
+        const BlePayload* payload = &mode->payloads[random_index];
 
         if(furi_hal_bt_is_active()) {
             furi_hal_bt_extra_beacon_stop();
@@ -49,8 +64,8 @@ static int32_t ble_ghost_worker(void* context) {
             }
         }
         
-        payload_index++;
-        furi_delay_ms(100);
+        // Dynamic delay spacing to maintain non-deterministic timing patterns
+        furi_delay_ms(80 + (furi_hal_random_ico() % 50));
     }
 
     furi_hal_bt_extra_beacon_stop();
@@ -60,15 +75,18 @@ static int32_t ble_ghost_worker(void* context) {
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
-    char buffer[64];
-    snprintf(buffer, sizeof(buffer), "\e#BLE Ghost Pairing (%s)\n", BLE_MODES[app->selected_mode].category_name);
+    // Pick a random name string to display on status screen
+    const char* random_alias = RANDOM_NAMES[furi_hal_random_ico() % 9];
+
+    char buffer[128];
+    snprintf(buffer, sizeof(buffer), "\e#BLE Ghost: %s\n", BLE_MODES[app->selected_mode].category_name);
     widget_add_string_element(app->widget, 0, 0, AlignLeft, AlignTop, FontPrimary, buffer);
 
-    snprintf(buffer, sizeof(buffer), "Status: Spamming Packets");
-    widget_add_string_element(app->widget, 0, 20, AlignLeft, AlignTop, FontSecondary, buffer);
+    snprintf(buffer, sizeof(buffer), "Target Alias: %s", random_alias);
+    widget_add_string_element(app->widget, 0, 18, AlignLeft, AlignTop, FontSecondary, buffer);
 
-    snprintf(buffer, sizeof(buffer), "Packets Sent: %lu", app->packet_count);
-    widget_add_string_element(app->widget, 0, 36, AlignLeft, AlignTop, FontSecondary, buffer);
+    snprintf(buffer, sizeof(buffer), "Packets Spammed: %lu", app->packet_count);
+    widget_add_string_element(app->widget, 0, 34, AlignLeft, AlignTop, FontSecondary, buffer);
 }
 
 static void submenu_callback(void* context, uint32_t index) {
@@ -77,7 +95,7 @@ static void submenu_callback(void* context, uint32_t index) {
     app->is_broadcasting = true;
     app->packet_count = 0;
     
-    app->worker_thread = furi_thread_alloc_ex("BleGhostWorker", 2048, ble_ghost_worker, app);
+    app->worker_thread = furi_thread_alloc_ex("BleGhostWorker", 4096, ble_ghost_worker, app);
     furi_thread_start(app->worker_thread);
 
     ble_ghost_update_widget(app);
@@ -109,10 +127,11 @@ static BleGhostApp* ble_ghost_app_alloc() {
     view_dispatcher_attach_to_gui(app->view_dispatcher, app->gui, ViewDispatcherTypeFullscreen);
 
     app->submenu = submenu_alloc();
-    submenu_add_item(app->submenu, "Apple Devices", SubmenuIndexApple, submenu_callback, app);
-    submenu_add_item(app->submenu, "Android Devices", SubmenuIndexAndroid, submenu_callback, app);
+    submenu_add_item(app->submenu, "Apple Ecosystem (TV/Setup)", SubmenuIndexApple, submenu_callback, app);
+    submenu_add_item(app->submenu, "Android & Audio", SubmenuIndexAndroid, submenu_callback, app);
     submenu_add_item(app->submenu, "Windows Devices", SubmenuIndexWindows, submenu_callback, app);
-    submenu_add_item(app->submenu, "Others / Samsung", SubmenuIndexOthers, submenu_callback, app);
+    submenu_add_item(app->submenu, "Random Storm Pool (All)", SubmenuIndexStorm, submenu_callback, app);
+    
     view_set_previous_callback(submenu_get_view(app->submenu), view_submenu_exit);
     view_dispatcher_add_view(app->view_dispatcher, ViewSubmenu, submenu_get_view(app->submenu));
 
