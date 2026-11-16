@@ -33,7 +33,6 @@ typedef struct {
     uint8_t selected_mode;
     uint8_t speed_profile;
     FuriThread* worker_thread;
-    FuriTimer* ui_timer;
 } BleGhostApp;
 
 // Exactly 21 custom connection names available for selection
@@ -61,11 +60,14 @@ static const char* RANDOM_NAMES[] = {
     "Broken Microwave ODU"
 };
 
+// Forward declaration
+static void ble_ghost_update_widget(BleGhostApp* app);
+
 static int32_t ble_ghost_worker(void* context) {
     BleGhostApp* app = context;
     
-    // Brief initial stabilization delay to let UI transition complete safely
-    furi_delay_ms(200);
+    // Give the system time to settle before activating the extra beacon stack
+    furi_delay_ms(300);
 
     while(app->is_broadcasting) {
         const BleMode* mode = &BLE_MODES[app->selected_mode];
@@ -73,10 +75,11 @@ static int32_t ble_ghost_worker(void* context) {
         size_t random_index = furi_hal_random_get() % mode->count;
         const BlePayload* payload = &mode->payloads[random_index];
 
-        // Ensure safe radio access and prevent furi_check assertions
+        // Safe BLE radio state guard to prevent furi_check assertion failures
         if(furi_hal_bt_is_active()) {
             furi_hal_bt_extra_beacon_stop();
             if(payload && payload->data && payload->size > 0) {
+                // Pass packet data safely without triggering re-entry faults
                 if(furi_hal_bt_extra_beacon_set_data(payload->data, payload->size)) {
                     furi_hal_bt_extra_beacon_start();
                     app->packet_count++;
@@ -84,10 +87,11 @@ static int32_t ble_ghost_worker(void* context) {
             }
         }
         
+        // Dynamic interval spacing
         if(app->speed_profile == 1) {
-            furi_delay_ms(30 + (furi_hal_random_get() % 20));
+            furi_delay_ms(40 + (furi_hal_random_get() % 20));
         } else {
-            furi_delay_ms(80 + (furi_hal_random_get() % 40));
+            furi_delay_ms(90 + (furi_hal_random_get() % 40));
         }
     }
 
@@ -100,7 +104,6 @@ static int32_t ble_ghost_worker(void* context) {
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
-    // Safely pick a random name from the 21 available aliases
     const char* random_alias = RANDOM_NAMES[furi_hal_random_get() % 21];
 
     char buffer[128];
@@ -117,24 +120,15 @@ static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_add_string_element(app->widget, 0, 48, AlignLeft, AlignTop, FontSecondary, buffer);
 }
 
-static void ble_ghost_ui_timer_callback(void* context) {
-    BleGhostApp* app = context;
-    if(app->is_broadcasting) {
-        ble_ghost_update_widget(app);
-    }
-}
-
 static void submenu_callback(void* context, uint32_t index) {
     BleGhostApp* app = context;
     app->selected_mode = index;
     app->packet_count = 0;
     app->is_broadcasting = true;
     
-    // Allocate and start background thread safely after setting broadcasting flag
+    // Start background thread cleanly
     app->worker_thread = furi_thread_alloc_ex("BleGhostWorker", 4096, ble_ghost_worker, app);
     furi_thread_start(app->worker_thread);
-
-    furi_timer_start(app->ui_timer, 1000);
 
     ble_ghost_update_widget(app);
     view_dispatcher_switch_to_view(app->view_dispatcher, ViewWidget);
@@ -148,7 +142,6 @@ static uint32_t view_submenu_exit(void* context) {
 static uint32_t view_widget_exit(void* context) {
     BleGhostApp* app = context;
     app->is_broadcasting = false;
-    furi_timer_stop(app->ui_timer);
     
     if(app->worker_thread) {
         furi_thread_join(app->worker_thread);
@@ -186,15 +179,11 @@ static BleGhostApp* ble_ghost_app_alloc() {
     app->speed_profile = 1;
     app->worker_thread = NULL;
 
-    app->ui_timer = furi_timer_alloc(ble_ghost_ui_timer_callback, FuriTimerTypePeriodic, app);
-
     return app;
 }
 
 static void ble_ghost_app_free(BleGhostApp* app) {
     app->is_broadcasting = false;
-    furi_timer_stop(app->ui_timer);
-    furi_timer_free(app->ui_timer);
 
     if(app->worker_thread) {
         furi_thread_join(app->worker_thread);
