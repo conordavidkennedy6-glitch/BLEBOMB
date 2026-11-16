@@ -3,7 +3,7 @@ App(
     name="BLE Ghost Pairing",
     apptype=FlipperAppType.EXTERNAL,
     entry_point="ble_ghost_app",
-    stack_size=2048,
+    stack_size=4096,
     fap_category="Bluetooth",
     requires=[
         "gui",
