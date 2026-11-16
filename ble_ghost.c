@@ -13,6 +13,7 @@ typedef enum {
     SubmenuIndexApple,
     SubmenuIndexAndroid,
     SubmenuIndexWindows,
+    SubmenuIndexOthers,
     SubmenuIndexStorm,
 } SubmenuIndex;
 
@@ -33,7 +34,7 @@ typedef struct {
     FuriThread* worker_thread;
 } BleGhostApp;
 
-// Random humorous device names pool for UI / connection menus
+// Randomized hilarious custom connection names pool
 static const char* RANDOM_NAMES[] = {
     "diddy's Vibrator",
     "Epsteins s35 galaxy",
@@ -43,7 +44,9 @@ static const char* RANDOM_NAMES[] = {
     "JetEngine_Test_Mic",
     "NSA Wiretap Node 9",
     "Get Me Out Of Here",
-    "Printer That Hates You"
+    "Printer That Hates You",
+    "Bluetooth Speaker (Explosive)",
+    "Alien Mothership Link"
 };
 
 static int32_t ble_ghost_worker(void* context) {
@@ -52,8 +55,8 @@ static int32_t ble_ghost_worker(void* context) {
     while(app->is_broadcasting) {
         const BleMode* mode = &BLE_MODES[app->selected_mode];
         
-        // Pick a completely random payload index from the current mode pool
-        size_t random_index = furi_hal_random_ico() % mode->count;
+        // Pick a completely random payload index from the active mode pool using valid SDK function
+        size_t random_index = furi_hal_random_get() % mode->count;
         const BlePayload* payload = &mode->payloads[random_index];
 
         if(furi_hal_bt_is_active()) {
@@ -64,8 +67,8 @@ static int32_t ble_ghost_worker(void* context) {
             }
         }
         
-        // Dynamic delay spacing to maintain non-deterministic timing patterns
-        furi_delay_ms(80 + (furi_hal_random_ico() % 50));
+        // Randomized timing delay to eliminate observable rhythm patterns
+        furi_delay_ms(60 + (furi_hal_random_get() % 70));
     }
 
     furi_hal_bt_extra_beacon_stop();
@@ -75,8 +78,8 @@ static int32_t ble_ghost_worker(void* context) {
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
-    // Pick a random name string to display on status screen
-    const char* random_alias = RANDOM_NAMES[furi_hal_random_ico() % 9];
+    // Select a random alias name to show on screen
+    const char* random_alias = RANDOM_NAMES[furi_hal_random_get() % 11];
 
     char buffer[128];
     snprintf(buffer, sizeof(buffer), "\e#BLE Ghost: %s\n", BLE_MODES[app->selected_mode].category_name);
@@ -127,10 +130,11 @@ static BleGhostApp* ble_ghost_app_alloc() {
     view_dispatcher_attach_to_gui(app->view_dispatcher, app->gui, ViewDispatcherTypeFullscreen);
 
     app->submenu = submenu_alloc();
-    submenu_add_item(app->submenu, "Apple Ecosystem (TV/Setup)", SubmenuIndexApple, submenu_callback, app);
-    submenu_add_item(app->submenu, "Android & Audio", SubmenuIndexAndroid, submenu_callback, app);
+    submenu_add_item(app->submenu, "Apple Ecosystem (TV/Audio)", SubmenuIndexApple, submenu_callback, app);
+    submenu_add_item(app->submenu, "Android & Buds", SubmenuIndexAndroid, submenu_callback, app);
     submenu_add_item(app->submenu, "Windows Devices", SubmenuIndexWindows, submenu_callback, app);
-    submenu_add_item(app->submenu, "Random Storm Pool (All)", SubmenuIndexStorm, submenu_callback, app);
+    submenu_add_item(app->submenu, "Smart Accessories", SubmenuIndexOthers, submenu_callback, app);
+    submenu_add_item(app->submenu, "Spam All (Chaos Storm)", SubmenuIndexStorm, submenu_callback, app);
     
     view_set_previous_callback(submenu_get_view(app->submenu), view_submenu_exit);
     view_dispatcher_add_view(app->view_dispatcher, ViewSubmenu, submenu_get_view(app->submenu));
