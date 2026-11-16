@@ -7,7 +7,6 @@ typedef struct {
     const char* name;
     const uint8_t* data;
     size_t size;
-    int8_t tx_power; // TX Power in dBm (+4dBm)
 } BlePayload;
 
 typedef struct {
@@ -33,19 +32,19 @@ static const uint8_t SAMBUDS_PAYLOAD[] = {
 };
 
 static const BlePayload APPLE_PAYLOADS[] = {
-    {"Apple AirPods", AIRPODS_PAYLOAD, sizeof(AIRPODS_PAYLOAD), 4}
+    {"Apple AirPods", AIRPODS_PAYLOAD, sizeof(AIRPODS_PAYLOAD)}
 };
 
 static const BlePayload ANDROID_PAYLOADS[] = {
-    {"Google Fast Pair", FASTPAIR_PAYLOAD, sizeof(FASTPAIR_PAYLOAD), 4}
+    {"Google Fast Pair", FASTPAIR_PAYLOAD, sizeof(FASTPAIR_PAYLOAD)}
 };
 
 static const BlePayload WINDOWS_PAYLOADS[] = {
-    {"Microsoft Swift Pair", SWIFTPAIR_PAYLOAD, sizeof(SWIFTPAIR_PAYLOAD), 4}
+    {"Microsoft Swift Pair", SWIFTPAIR_PAYLOAD, sizeof(SWIFTPAIR_PAYLOAD)}
 };
 
 static const BlePayload OTHERS_PAYLOADS[] = {
-    {"Samsung Buds", SAMBUDS_PAYLOAD, sizeof(SAMBUDS_PAYLOAD), 4}
+    {"Samsung Buds", SAMBUDS_PAYLOAD, sizeof(SAMBUDS_PAYLOAD)}
 };
 
 static const BleMode BLE_MODES[] = {
