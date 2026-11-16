@@ -31,12 +31,11 @@ typedef struct {
     bool is_broadcasting;
     uint32_t packet_count;
     uint8_t selected_mode;
-    uint8_t speed_profile; // 0 = Normal, 1 = Hyper Storm
+    uint8_t speed_profile;
     FuriThread* worker_thread;
     FuriTimer* ui_timer;
 } BleGhostApp;
 
-// Expanded pool of 20+ humorous custom connection names
 static const char* RANDOM_NAMES[] = {
     "diddy's Vibrator",
     "Epsteins s35 galaxy",
@@ -52,8 +51,8 @@ static const char* RANDOM_NAMES[] = {
     "Zuck's Meta Glass",
     "Area 51 Beacon 6",
     "Not A Police Drone",
-    "50 cents Smart Fridge",
-    "Taylor swift Hotspot",
+    "Mom's Smart Fridge",
+    "Dark Web Hotspot",
     "Caution: Biohazard",
     "Quantum Teleporter v2",
     "Couch Cushion Lost & Found",
@@ -70,6 +69,7 @@ static int32_t ble_ghost_worker(void* context) {
         size_t random_index = furi_hal_random_get() % mode->count;
         const BlePayload* payload = &mode->payloads[random_index];
 
+        // Safely check bluetooth availability to prevent furi_check faults
         if(furi_hal_bt_is_active()) {
             furi_hal_bt_extra_beacon_stop();
             if(furi_hal_bt_extra_beacon_set_data(payload->data, payload->size)) {
@@ -78,22 +78,22 @@ static int32_t ble_ghost_worker(void* context) {
             }
         }
         
-        // Dynamic delay spacing based on speed profile selection
         if(app->speed_profile == 1) {
-            furi_delay_ms(20 + (furi_hal_random_get() % 20)); // Hyper Storm speed
+            furi_delay_ms(20 + (furi_hal_random_get() % 20));
         } else {
-            furi_delay_ms(70 + (furi_hal_random_get() % 50)); // Normal speed
+            furi_delay_ms(70 + (furi_hal_random_get() % 50));
         }
     }
 
-    furi_hal_bt_extra_beacon_stop();
+    if(furi_hal_bt_is_active()) {
+        furi_hal_bt_extra_beacon_stop();
+    }
     return 0;
 }
 
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
-    // Pick a random alias from our expanded 21-item array
     const char* random_alias = RANDOM_NAMES[furi_hal_random_get() % 21];
 
     char buffer[128];
@@ -110,7 +110,6 @@ static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_add_string_element(app->widget, 0, 48, AlignLeft, AlignTop, FontSecondary, buffer);
 }
 
-// Timer callback to refresh UI dynamically every second without locking up
 static void ble_ghost_ui_timer_callback(void* context) {
     BleGhostApp* app = context;
     if(app->is_broadcasting) {
@@ -124,11 +123,9 @@ static void submenu_callback(void* context, uint32_t index) {
     app->is_broadcasting = true;
     app->packet_count = 0;
     
-    // Start background worker thread
     app->worker_thread = furi_thread_alloc_ex("BleGhostWorker", 4096, ble_ghost_worker, app);
     furi_thread_start(app->worker_thread);
 
-    // Start live UI refresh timer (ticks every 1000ms / 1 second)
     furi_timer_start(app->ui_timer, 1000);
 
     ble_ghost_update_widget(app);
@@ -178,10 +175,9 @@ static BleGhostApp* ble_ghost_app_alloc() {
     app->is_broadcasting = false;
     app->packet_count = 0;
     app->selected_mode = 0;
-    app->speed_profile = 1; // Default to Hyper Storm mode
+    app->speed_profile = 1;
     app->worker_thread = NULL;
 
-    // Initialize UI periodic refresh timer
     app->ui_timer = furi_timer_alloc(ble_ghost_ui_timer_callback, FuriTimerTypePeriodic, app);
 
     return app;
