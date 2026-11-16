@@ -32,12 +32,12 @@ typedef struct {
     int8_t current_rssi;
 } BleGhostApp;
 
-// Distance estimation function based on RSSI and TX Power (+4dBm baseline)
+// Distance estimation function utilizing measured power and RSSI
 static float calculate_distance(int8_t rssi, int8_t tx_power) {
     int8_t measured_power = tx_power - 55; // 1-meter calibration offset
-    if (rssi >= -40) return 0.5f;
+    if (rssi >= measured_power) return 0.5f;
     if (rssi <= -90) return 15.0f;
-    return (float)(-40 - rssi) * 0.2f + 0.5f;
+    return (float)(measured_power - rssi) * 0.1f + 0.5f;
 }
 
 static void ble_ghost_update_widget(BleGhostApp* app) {
