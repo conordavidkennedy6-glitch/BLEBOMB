@@ -6,6 +6,7 @@
 #include <gui/modules/widget.h>
 #include <notification/notification_messages.h>
 #include <bt/bt_service/bt.h>
+#include <furi_hal_bt.h>
 #include "ble_payloads.h"
 
 typedef enum {
@@ -29,34 +30,45 @@ typedef struct {
     bool is_broadcasting;
     uint32_t packet_count;
     uint8_t selected_mode;
-    int8_t current_rssi;
+    FuriThread* worker_thread;
 } BleGhostApp;
 
-// Distance estimation function utilizing measured power and RSSI
-static float calculate_distance(int8_t rssi, int8_t tx_power) {
-    int8_t measured_power = tx_power - 55; // 1-meter calibration offset
-    if (rssi >= measured_power) return 0.5f;
-    if (rssi <= -90) return 15.0f;
-    return (float)(measured_power - rssi) * 0.1f + 0.5f;
+static int32_t ble_ghost_worker(void* context) {
+    BleGhostApp* app = context;
+    size_t payload_index = 0;
+    
+    while(app->is_broadcasting) {
+        const BleMode* mode = &BLE_MODES[app->selected_mode];
+        const BlePayload* payload = &mode->payloads[payload_index % mode->count];
+
+        if(furi_hal_bt_is_active()) {
+            furi_hal_bt_extra_beacon_stop();
+            if(furi_hal_bt_extra_beacon_set_data(payload->data, payload->size)) {
+                furi_hal_bt_extra_beacon_start();
+                app->packet_count++;
+            }
+        }
+        
+        payload_index++;
+        furi_delay_ms(100);
+    }
+
+    furi_hal_bt_extra_beacon_stop();
+    return 0;
 }
 
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
-    float distance = calculate_distance(app->current_rssi, 4);
-    
     char buffer[64];
     snprintf(buffer, sizeof(buffer), "\e#BLE Ghost Pairing (%s)\n", BLE_MODES[app->selected_mode].category_name);
     widget_add_string_element(app->widget, 0, 0, AlignLeft, AlignTop, FontPrimary, buffer);
 
-    snprintf(buffer, sizeof(buffer), "Status: %s", app->is_broadcasting ? "Active (Spamming)" : "Idle");
-    widget_add_string_element(app->widget, 0, 16, AlignLeft, AlignTop, FontSecondary, buffer);
+    snprintf(buffer, sizeof(buffer), "Status: Spamming Packets");
+    widget_add_string_element(app->widget, 0, 20, AlignLeft, AlignTop, FontSecondary, buffer);
 
     snprintf(buffer, sizeof(buffer), "Packets Sent: %lu", app->packet_count);
-    widget_add_string_element(app->widget, 0, 30, AlignLeft, AlignTop, FontSecondary, buffer);
-
-    snprintf(buffer, sizeof(buffer), "Est. Distance: %.1f meters (RSSI: %d dBm)", (double)distance, app->current_rssi);
-    widget_add_string_element(app->widget, 0, 44, AlignLeft, AlignTop, FontSecondary, buffer);
+    widget_add_string_element(app->widget, 0, 36, AlignLeft, AlignTop, FontSecondary, buffer);
 }
 
 static void submenu_callback(void* context, uint32_t index) {
@@ -64,8 +76,10 @@ static void submenu_callback(void* context, uint32_t index) {
     app->selected_mode = index;
     app->is_broadcasting = true;
     app->packet_count = 0;
-    app->current_rssi = -65; // Simulated active RSSI reading
     
+    app->worker_thread = furi_thread_alloc_ex("BleGhostWorker", 2048, ble_ghost_worker, app);
+    furi_thread_start(app->worker_thread);
+
     ble_ghost_update_widget(app);
     view_dispatcher_switch_to_view(app->view_dispatcher, ViewWidget);
 }
@@ -78,6 +92,11 @@ static uint32_t view_submenu_exit(void* context) {
 static uint32_t view_widget_exit(void* context) {
     BleGhostApp* app = context;
     app->is_broadcasting = false;
+    if(app->worker_thread) {
+        furi_thread_join(app->worker_thread);
+        furi_thread_free(app->worker_thread);
+        app->worker_thread = NULL;
+    }
     return ViewSubmenu;
 }
 
@@ -104,12 +123,17 @@ static BleGhostApp* ble_ghost_app_alloc() {
     app->is_broadcasting = false;
     app->packet_count = 0;
     app->selected_mode = 0;
-    app->current_rssi = -70;
+    app->worker_thread = NULL;
 
     return app;
 }
 
 static void ble_ghost_app_free(BleGhostApp* app) {
+    app->is_broadcasting = false;
+    if(app->worker_thread) {
+        furi_thread_join(app->worker_thread);
+        furi_thread_free(app->worker_thread);
+    }
     view_dispatcher_remove_view(app->view_dispatcher, ViewSubmenu);
     view_dispatcher_remove_view(app->view_dispatcher, ViewWidget);
     submenu_free(app->submenu);
