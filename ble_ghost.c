@@ -36,6 +36,7 @@ typedef struct {
     FuriTimer* ui_timer;
 } BleGhostApp;
 
+// Exactly 21 custom connection names available for selection
 static const char* RANDOM_NAMES[] = {
     "diddy's Vibrator",
     "Epsteins s35 galaxy",
@@ -63,25 +64,30 @@ static const char* RANDOM_NAMES[] = {
 static int32_t ble_ghost_worker(void* context) {
     BleGhostApp* app = context;
     
+    // Brief initial stabilization delay to let UI transition complete safely
+    furi_delay_ms(200);
+
     while(app->is_broadcasting) {
         const BleMode* mode = &BLE_MODES[app->selected_mode];
         
         size_t random_index = furi_hal_random_get() % mode->count;
         const BlePayload* payload = &mode->payloads[random_index];
 
-        // Safely check bluetooth availability to prevent furi_check faults
+        // Ensure safe radio access and prevent furi_check assertions
         if(furi_hal_bt_is_active()) {
             furi_hal_bt_extra_beacon_stop();
-            if(furi_hal_bt_extra_beacon_set_data(payload->data, payload->size)) {
-                furi_hal_bt_extra_beacon_start();
-                app->packet_count++;
+            if(payload && payload->data && payload->size > 0) {
+                if(furi_hal_bt_extra_beacon_set_data(payload->data, payload->size)) {
+                    furi_hal_bt_extra_beacon_start();
+                    app->packet_count++;
+                }
             }
         }
         
         if(app->speed_profile == 1) {
-            furi_delay_ms(20 + (furi_hal_random_get() % 20));
+            furi_delay_ms(30 + (furi_hal_random_get() % 20));
         } else {
-            furi_delay_ms(70 + (furi_hal_random_get() % 50));
+            furi_delay_ms(80 + (furi_hal_random_get() % 40));
         }
     }
 
@@ -94,6 +100,7 @@ static int32_t ble_ghost_worker(void* context) {
 static void ble_ghost_update_widget(BleGhostApp* app) {
     widget_reset(app->widget);
     
+    // Safely pick a random name from the 21 available aliases
     const char* random_alias = RANDOM_NAMES[furi_hal_random_get() % 21];
 
     char buffer[128];
@@ -120,9 +127,10 @@ static void ble_ghost_ui_timer_callback(void* context) {
 static void submenu_callback(void* context, uint32_t index) {
     BleGhostApp* app = context;
     app->selected_mode = index;
-    app->is_broadcasting = true;
     app->packet_count = 0;
+    app->is_broadcasting = true;
     
+    // Allocate and start background thread safely after setting broadcasting flag
     app->worker_thread = furi_thread_alloc_ex("BleGhostWorker", 4096, ble_ghost_worker, app);
     furi_thread_start(app->worker_thread);
 
